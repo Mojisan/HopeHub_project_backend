@@ -40,6 +40,9 @@ router.post("/register", async (req, res) => {
   }
 });
 
+module.exports = router;
+
+
 // API: เข้าสู่ระบบ
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
