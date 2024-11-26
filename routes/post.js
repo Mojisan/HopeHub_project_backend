@@ -47,9 +47,7 @@ router.get("/posts", async (req, res) => {
           postBy,
           title: post.title,
           content: post.content,
-          postAt: post.postAt
-            ? new Date(post.postAt).toLocaleDateString("en-GB") // Format date to DD-MM-YYYY
-            : null,
+          postAt: post.postAt.toISOString(),
           like: post.like || 0,
           dislike: post.dislike || 0,
           comment: comments,
@@ -77,12 +75,7 @@ router.get("/post/:id", async (req, res) => {
     }
 
     // Fetch the user who created the post
-    let user = null
-    try {
-      user = await User.findById(post.userId)
-    } catch (error) {
-      console.error("Error fetching user:", error)
-    }
+    const user = await User.findById(post.userId)
 
     const postBy = user
       ? {
@@ -94,31 +87,33 @@ router.get("/post/:id", async (req, res) => {
         }
       : null
 
-    // Safely handle comments
-    const comments = Array.isArray(post.comments)
-      ? post.comments.map((comment) => ({
-          commentBy: {
-            commentId: comment._id.toString(),
-            userId: comment.userId.toString(),
-            username: comment.username,
-            firstName: comment.firstName,
-            lastName: comment.lastName,
-            avatar: comment.avatar || null,
-          },
-          commentMessage: comment.message,
-          like: comment.like || 0,
-          dislike: comment.dislike || 0,
-        }))
-      : []
+    // Fetch comments related to this post
+    const commentsData = await Comment.find({ postId: id }).populate({
+      path: "userId",
+      select: "username firstName lastName avatar",
+    })
 
+    // Transform comments with populated user data
+    const comments = commentsData.map((comment) => ({
+      commentBy: {
+        userId: comment.userId._id.toString(),
+        username: comment.userId.username,
+        firstName: comment.userId.firstName,
+        lastName: comment.userId.lastName,
+        avatar: comment.userId.avatar || null,
+      },
+      commentMessage: comment.comment,
+      like: comment.like || 0,
+      dislike: comment.dislike || 0,
+    }))
+
+    // Construct response
     const response = {
       postId: post._id.toString(),
       postBy,
       title: post.title,
       content: post.content,
-      postAt: post.postAt
-        ? new Date(post.postAt).toLocaleDateString("en-GB")
-        : null,
+      postAt: post.postAt.toISOString(),
       like: post.like || 0,
       dislike: post.dislike || 0,
       comment: comments,
@@ -152,7 +147,7 @@ router.post("/addPost", async (req, res) => {
 })
 
 // API: Like Post
-router.put("/:postId/like", async (req, res) => {
+router.put("/post/:postId/like", async (req, res) => {
   const { postId } = req.params
 
   try {
@@ -161,7 +156,30 @@ router.put("/:postId/like", async (req, res) => {
       return res.status(404).json({ message: "Post not found" })
     }
 
+    if (post.dislike > 0) {
+      post.dislike -= 1
+    }
     post.like += 1
+    await post.save()
+    res.status(200).json({ message: "Post liked", post })
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error })
+  }
+})
+
+router.put("/post/:postId/dislike", async (req, res) => {
+  const { postId } = req.params
+
+  try {
+    const post = await Post.findById(postId)
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" })
+    }
+
+    if (post.like > 0) {
+      post.like -= 1
+    }
+    post.dislike += 1
     await post.save()
     res.status(200).json({ message: "Post liked", post })
   } catch (error) {
